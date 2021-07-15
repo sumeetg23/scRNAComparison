@@ -1,5 +1,5 @@
 #!/usr/bin/RScript
-basedir <- "/lab/htdata/Archived_Data/GTC/scRNAKitComp/" #as.character(args[1]) # this is the folder with the subfolder "Counts"
+basedir <- "" #as.character(args[1]) # this is the folder with the subfolder "Counts"
 
 # Take 'all' htseq-count results and melt them in to one big dataframe
 library(Seurat)
