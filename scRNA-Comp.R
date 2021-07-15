@@ -95,3 +95,67 @@ plotColData(sce, y="total", x="Prep", show_median=TRUE)
 plotColData(sce, y="percent_top_500", x="Prep", show_median=TRUE)
 plotColData(sce, y="subsets_Mt_percent", x="Prep", show_median=TRUE)
 plotColData(sce, x = "sum", y="detected", colour_by="Prep") 
+
+# Split into separate single cell objects
+sceKIT1 <- sce[, sce$Prep == "KIT1"]
+sceKIT1 <- addPerCellQC(sceKIT1, subsets=list(Mt=mito))
+sceKIT1featstat <- perFeatureQCMetrics(sceKIT1)
+sceKIT2 <- sce[, sce$Prep == "KIT2"]
+sceKIT2 <- addPerCellQC(sceKIT2, subsets=list(Mt=mito))
+sceKIT2featstat <- perFeatureQCMetrics(sceKIT2)
+sceKIT3 <- sce[, sce$Prep == "KIT3"]
+sceKIT3 <- addPerCellQC(sceKIT3, subsets=list(Mt=mito))
+sceKIT3featstat <- perFeatureQCMetrics(sceKIT3)
+sceKIT4 <- sce[, sce$Prep == "KIT4"]
+sceKIT4 <- addPerCellQC(sceKIT4, subsets=list(Mt=mito))
+sceKIT4featstat <- perFeatureQCMetrics(sceKIT4)
+sceli <- sce[, sce$Prep == "PUBLISHED"]
+sceli <- addPerCellQC(sceli, subsets=list(Mt=mito))
+scelifeatstat <- perFeatureQCMetrics(sceli)
+
+sce <- computeSumFactors(sce)
+sce <- logNormCounts(sce) # see below.
+vars <- getVarianceExplained(sce, variables=c("Prep", "Cond", "Cond2"))
+plotExplanatoryVariables(vars)
+
+###############################
+
+sce.seurat <- as.Seurat(sce)
+sce.seurat <- NormalizeData(object = sce.seurat)
+sce.seurat <- ScaleData(sce.seurat)
+sce.seurat <- FindVariableFeatures(object = sce.seurat, mean.function = ExpMean, dispersion.function = LogVMR, x.low.cutoff = 0.0125, x.high.cutoff = 7, y.cutoff = 0.7, do.text=FALSE, cex.use = 0.2)
+
+sce.seurat <- RunPCA(object = sce.seurat)
+PCAPlot(sce.seurat)
+
+###############################
+
+# Dim reduction
+sce <- runPCA(sce, scale=FALSE)
+sce <- runTSNE(sce, use_dimred="PCA")
+plotTSNE(sce, run_args=list(use_dimred="PCA", perplexity=20), colour_by="Cond2")
+plotTSNE(sce, run_args=list(use_dimred="PCA", perplexity=20), colour_by="Prep")
+sce <- runPCA(sce, features = VariableFeatures(object = sce))
+plotPCA(sce)
+
+jpeg("CummulativePlot.jpg", width = 1500, height = 750)
+plotScater(sce, colour_by = "Prep", nfeatures=500)
+dev.off()
+
+jpeg("TotalCounts.jpg", width = 750, height = 750)
+plotColData(sce, y="total_counts", x="Prep", show_median=TRUE)
+dev.off()
+
+jpeg("TotalGenes.jpg", width = 750, height = 750)
+plotColData(sce, y="total_features_by_counts", x="Prep", show_median=TRUE)
+dev.off()
+
+jpeg("PercentMt.jpg", width = 750, height = 750)
+plotColData(sce, y="pct_counts_Mt", x="Prep", show_median=TRUE)
+dev.off()
+
+jpeg("HighExpAll.jpg", width = 2000, height = 1000)
+multiplot(plotHighestExprs(sce[, sce$Prep == "KIT1"],controls = NULL),plotHighestExprs(sce[, sce$Prep == "KIT2"],controls = NULL),plotHighestExprs(sce[, sce$Prep == "KIT3"],controls = NULL),plotHighestExprs(sce[, sce$Prep == "KIT4"],controls = NULL), cols=2)
+dev.off()
+
+
