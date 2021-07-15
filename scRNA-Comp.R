@@ -1,5 +1,5 @@
 #!/usr/bin/RScript
-basedir <- "" #as.character(args[1]) # this is the folder with the subfolder "Counts"
+basedir <- "/lab/htdata/Archived_Data/GTC/scRNAKitComp/" #as.character(args[1]) # this is the folder with the subfolder "Counts"
 
 # Take 'all' htseq-count results and melt them in to one big dataframe
 library(Seurat)
@@ -7,7 +7,9 @@ library(SingleCellExperiment)
 library(org.Mm.eg.db)
 library(scater)
 library(TxDb.Mmusculus.UCSC.mm10.ensGene)
-
+library(ggplot2)
+library(cowplot)
+library(scran)
 
 setwd(basedir)
 
@@ -15,11 +17,11 @@ setwd(basedir)
 cntdir <- paste(basedir, "Counts", sep="/")
 pat <- ".count" # count file extension
 myfiles <- list.files(path = cntdir,
-                         pattern = pat,
-                         all.files = TRUE,
-                         recursive = FALSE,
-                         ignore.case = FALSE,
-                         include.dirs = FALSE)
+                      pattern = pat,
+                      all.files = TRUE,
+                      recursive = FALSE,
+                      ignore.case = FALSE,
+                      include.dirs = FALSE)
 
 # read each file as array element of DT and rename the last 2 cols
 # we created a list of single sample tables
@@ -74,7 +76,7 @@ rowData(sce)$CHR <- location
 summary(location=="chrM")
 
 # Read metadata for all experiments and attach to single cell data
-metadata <- read.delim("SingleCellBarcodes.txt", check.names=FALSE, header=TRUE)
+metadata <- read.delim("SingleCellBarcodes-Git.txt", check.names=FALSE, header=TRUE)
 m <- match(colnames(sce), metadata[["FileName"]])
 stopifnot(all(!is.na(m)))
 metadata <- metadata[m,]
@@ -97,65 +99,41 @@ plotColData(sce, y="subsets_Mt_percent", x="Prep", show_median=TRUE)
 plotColData(sce, x = "sum", y="detected", colour_by="Prep") 
 
 # Split into separate single cell objects
-sceKIT1 <- sce[, sce$Prep == "KIT1"]
-sceKIT1 <- addPerCellQC(sceKIT1, subsets=list(Mt=mito))
-sceKIT1featstat <- perFeatureQCMetrics(sceKIT1)
-sceKIT2 <- sce[, sce$Prep == "KIT2"]
-sceKIT2 <- addPerCellQC(sceKIT2, subsets=list(Mt=mito))
-sceKIT2featstat <- perFeatureQCMetrics(sceKIT2)
-sceKIT3 <- sce[, sce$Prep == "KIT3"]
-sceKIT3 <- addPerCellQC(sceKIT3, subsets=list(Mt=mito))
-sceKIT3featstat <- perFeatureQCMetrics(sceKIT3)
-sceKIT4 <- sce[, sce$Prep == "KIT4"]
-sceKIT4 <- addPerCellQC(sceKIT4, subsets=list(Mt=mito))
-sceKIT4featstat <- perFeatureQCMetrics(sceKIT4)
-sceli <- sce[, sce$Prep == "PUBLISHED"]
-sceli <- addPerCellQC(sceli, subsets=list(Mt=mito))
-scelifeatstat <- perFeatureQCMetrics(sceli)
-
 sce <- computeSumFactors(sce)
 sce <- logNormCounts(sce) # see below.
-vars <- getVarianceExplained(sce, variables=c("Prep", "Cond", "Cond2"))
-plotExplanatoryVariables(vars)
 
-###############################
+# Normalize all kits separately, then combine and visualize all together
+sce.seurat <- as.Seurat(sce)
+sce.seurat.list <- SplitObject(sce.seurat, split.by = "Prep")
+sce.seurat.list <- sce.seurat.list[c("KIT1","KIT2", "KIT3", "KIT4", "PUBLISHED")]
+for (i in 1:length(sce.seurat.list)) {
+  sce.seurat.list[[i]] <- NormalizeData(sce.seurat.list[[i]], verbose = FALSE)
+  sce.seurat.list[[i]] <- FindVariableFeatures(sce.seurat.list[[i]], selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+}
+sce.seurat.anchors <- FindIntegrationAnchors(object.list = sce.seurat.list, dims = 1:10, k.filter = 25)
+sce.seurat.integrated <- IntegrateData(anchorset = sce.seurat.anchors, dims = 1:10)
+
+DefaultAssay(sce.seurat.integrated) <- "integrated"
+sce.seurat.integrated <- ScaleData(sce.seurat.integrated, verbose = FALSE)
+sce.seurat.integrated <- RunPCA(sce.seurat.integrated, npcs = 10, verbose = FALSE)
+sce.seurat.integrated <- RunUMAP(sce.seurat.integrated, reduction = "pca", dims = 1:10)
+
+DimPlot(sce.seurat.integrated, reduction = "umap", group.by = c("Prep", "Cond2"))
 
 sce.seurat <- as.Seurat(sce)
-sce.seurat <- NormalizeData(object = sce.seurat)
-sce.seurat <- ScaleData(sce.seurat)
-sce.seurat <- FindVariableFeatures(object = sce.seurat, mean.function = ExpMean, dispersion.function = LogVMR, x.low.cutoff = 0.0125, x.high.cutoff = 7, y.cutoff = 0.7, do.text=FALSE, cex.use = 0.2)
+sce.seurat.list <- SplitObject(sce.seurat, split.by = "Prep")
+sce.seurat.list <- sce.seurat.list[c("KIT1","KIT2", "KIT3", "KIT4", "PUBLISHED")]
 
-sce.seurat <- RunPCA(object = sce.seurat)
-PCAPlot(sce.seurat)
+for (i in 1:length(sce.seurat.list)) {
+  sce.seurat.list[[i]] <- SCTransform(sce.seurat.list[[i]], verbose = FALSE)
+}
 
-###############################
+sce.seurat.features <- SelectIntegrationFeatures(object.list = sce.seurat.list, nfeatures = 3000)
+sce.seurat.list <- PrepSCTIntegration(object.list = sce.seurat.list, anchor.features = sce.seurat.features, verbose = FALSE)
+sce.seurat.anchors <- FindIntegrationAnchors(object.list = sce.seurat.list, normalization.method = "SCT", anchor.features = sce.seurat.features, verbose = FALSE, k.filter = 25, dims = 1:10)
+sce.seurat.integrated <- IntegrateData(anchorset = sce.seurat.anchors, normalization.method = "SCT", verbose = FALSE)
+sce.seurat.integrated <- RunPCA(sce.seurat.integrated, verbose = FALSE)
+sce.seurat.integrated <- RunUMAP(sce.seurat.integrated, dims = 1:10)
 
-# Dim reduction
-sce <- runPCA(sce, scale=FALSE)
-sce <- runTSNE(sce, use_dimred="PCA")
-plotTSNE(sce, run_args=list(use_dimred="PCA", perplexity=20), colour_by="Cond2")
-plotTSNE(sce, run_args=list(use_dimred="PCA", perplexity=20), colour_by="Prep")
-sce <- runPCA(sce, features = VariableFeatures(object = sce))
-plotPCA(sce)
-
-jpeg("CummulativePlot.jpg", width = 1500, height = 750)
-plotScater(sce, colour_by = "Prep", nfeatures=500)
-dev.off()
-
-jpeg("TotalCounts.jpg", width = 750, height = 750)
-plotColData(sce, y="total_counts", x="Prep", show_median=TRUE)
-dev.off()
-
-jpeg("TotalGenes.jpg", width = 750, height = 750)
-plotColData(sce, y="total_features_by_counts", x="Prep", show_median=TRUE)
-dev.off()
-
-jpeg("PercentMt.jpg", width = 750, height = 750)
-plotColData(sce, y="pct_counts_Mt", x="Prep", show_median=TRUE)
-dev.off()
-
-jpeg("HighExpAll.jpg", width = 2000, height = 1000)
-multiplot(plotHighestExprs(sce[, sce$Prep == "KIT1"],controls = NULL),plotHighestExprs(sce[, sce$Prep == "KIT2"],controls = NULL),plotHighestExprs(sce[, sce$Prep == "KIT3"],controls = NULL),plotHighestExprs(sce[, sce$Prep == "KIT4"],controls = NULL), cols=2)
-dev.off()
-
-
+DimPlot(sce.seurat.integrated, group.by = c("Prep", "Cond2"), combine = FALSE, reduction = "pca")
+DimPlot(sce.seurat.integrated, group.by = c("Prep", "Cond2"))
