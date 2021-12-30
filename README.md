@@ -7,4 +7,6 @@ Datasets from 4 commercial library prep kits (KIT1, KIT2, KIT3 and KIT4) and alr
 
 ![image](https://user-images.githubusercontent.com/17224367/147722265-3291e38e-d69f-4f8e-ad33-854140ed6df7.png)
 
+![image](https://user-images.githubusercontent.com/17224367/147722635-24f3b987-6733-47c4-b9d3-3a21f31e6ad3.png)
+
 ![image](https://user-images.githubusercontent.com/17224367/147721992-b3c78cf9-7df1-4345-b8b2-a4a244529574.png)
